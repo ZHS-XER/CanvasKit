@@ -23,6 +23,7 @@ from rich.table import Table
 from .canvas import CanvasClient, CanvasError, Course, CourseFile
 from .config import CONFIG_FILE, ConfigError, CourseConfig, find_course_config, load_config, load_courses
 from .formats import clock, slides_brief, slides_json, slides_markdown, to_srt, to_text
+from . import skill
 from .library import FileState, Manifest, destination, now, reconcile_local
 from .video import Lecture, VideoClient, VideoError
 
@@ -696,6 +697,61 @@ def sync(
             out.print(f"[red]{r['error']}[/red]")
         else:
             _print_sync(r)
+
+
+# -- skill -----------------------------------------------------------------
+
+skill_app = typer.Typer(help="Install the bundled Claude Code skill.", no_args_is_help=True)
+app.add_typer(skill_app, name="skill")
+SkillsDirOpt = typer.Option(None, "--target", help="Skills directory (default: ~/.claude/skills)", file_okay=False)
+SKILL_STATUS = {
+    "installed": "已安装",
+    "updated": "已更新",
+    "unchanged": "已是最新",
+    "exists": "已存在不同版本或链接，未改动（--force 覆盖）",
+    "removed": "已删除",
+    "absent": "未安装",
+}
+
+
+def _skill_result(status: str, path: Path, as_json: bool) -> None:
+    if as_json:
+        _emit_json({"status": status, "path": str(path)})
+    else:
+        out.print(f"{SKILL_STATUS[status]}：{path}")
+
+
+@skill_app.command("install")
+def skill_install(
+    target: Optional[Path] = SkillsDirOpt,
+    force: bool = typer.Option(False, "--force", "-f", help="Replace a different version or a symlink"),
+    as_json: bool = JsonOpt,
+) -> None:
+    """Copy SKILL.md to <target>/canvaskit/. Run again with --force after upgrading canvaskit."""
+    try:
+        status, path = skill.install(target, force)
+    except (skill.SkillError, OSError) as e:
+        _fail(e)
+    _skill_result(status, path, as_json)
+
+
+@skill_app.command("uninstall")
+def skill_uninstall(target: Optional[Path] = SkillsDirOpt, as_json: bool = JsonOpt) -> None:
+    """Remove <target>/canvaskit/."""
+    try:
+        status, path = skill.uninstall(target)
+    except OSError as e:
+        _fail(e)
+    _skill_result(status, path, as_json)
+
+
+@skill_app.command("path")
+def skill_path() -> None:
+    """Print the location of the bundled SKILL.md (to hand to other agents)."""
+    try:
+        sys.stdout.write(f"{skill.source()}\n")
+    except skill.SkillError as e:
+        _fail(e)
 
 
 if __name__ == "__main__":

@@ -1,15 +1,33 @@
 [project]
 name = "canvaskit"
 version = "0.1.0"
-description = "Agent-friendly CLI for SJTU Canvas: lecture subtitles, slide snapshots, course files"
+description = "Agent-friendly CLI for SJTU Canvas: lecture subtitles and course files"
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "ZHS-XER" }]
+keywords = ["sjtu", "canvas", "cli", "agent", "claude-code", "subtitles"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Natural Language :: Chinese (Simplified)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Education",
+]
 dependencies = [
     "httpx>=0.27",
     "typer>=0.12",
     "rich>=13",
     "tomli>=2; python_version < '3.11'",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ZHS-XER/CanvasKit"
+Issues = "https://github.com/ZHS-XER/CanvasKit/issues"
 
 [project.scripts]
 canvaskit = "canvaskit.cli:app"
@@ -23,3 +41,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/canvaskit"]
+
+# Ship the Claude Code skill inside the package so `canvaskit skill install` works without a clone.
+[tool.hatch.build.targets.wheel.force-include]
+"skills/canvaskit/SKILL.md" = "canvaskit/skill/SKILL.md"

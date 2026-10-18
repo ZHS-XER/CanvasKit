@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        run: uv sync --locked
+      - name: Test
+        run: uv run pytest -q
+      - name: Smoke test
+        run: |
+          uv run canvaskit --version
+          uv run canvaskit --help
+          uv run canvaskit skill path
+
+  package:
+    name: build and install wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - name: Build
+        run: uv build
+      - name: Install from wheel and install the skill
+        run: |
+          uv tool install dist/*.whl
+          canvaskit --version
+          canvaskit skill install --target "$RUNNER_TEMP/skills"
+          test -s "$RUNNER_TEMP/skills/canvaskit/SKILL.md"

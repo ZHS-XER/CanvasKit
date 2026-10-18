@@ -1,5 +1,8 @@
 # CanvasKit
 
+[![CI](https://github.com/ZHS-XER/CanvasKit/actions/workflows/ci.yml/badge.svg)](https://github.com/ZHS-XER/CanvasKit/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 CanvasKit 是面向 Agent（如 Claude Code）的上海交通大学 Canvas（`oc.sjtu.edu.cn`）工具，用于获取课堂录播字幕和课程文件。配合 Agent 使用，可以在课后总结授课内容、定位授课进度、检查并下载新发布的课件。
 
 仅需 Canvas 访问令牌（Token），无需 jAccount 登录。
@@ -10,7 +13,7 @@ CanvasKit 是面向 Agent（如 Claude Code）的上海交通大学 Canvas（`oc
 
 将以下指令发送给 Agent：
 
-> 请阅读 https://github.com/ZHS-XER/CanvasKit 的 README，按照“命令行使用 → 安装”一节安装 CanvasKit 及其 Claude Code Skill，完成后运行 `canvaskit --help` 确认安装成功。
+> 请阅读 https://github.com/ZHS-XER/CanvasKit 的 README，按照“命令行使用 → 安装”一节安装 CanvasKit 及其 Claude Code Skill，完成后运行 `canvaskit --version` 确认安装成功。
 
 ### 2. 配置 Token
 
@@ -81,6 +84,13 @@ Token 具有与账号相同的访问权限，请勿泄露，也不要在与 Agen
 - **隐私**：课堂截图可能包含教师屏幕上的个人信息（如登录页面、学生名单），请勿传播下载的内容。
 - **稳定性**：录播相关功能依赖交大视频平台的非公开接口，平台改版后可能失效；课程与文件功能基于 Canvas 标准 API，较为稳定。
 
+## 免责声明
+
+- 本项目为个人开发的非官方工具，与上海交通大学及 Canvas（Instructure）无任何关联。
+- 本工具仅使用你本人的 Canvas 凭证，访问你本人有权访问的内容，请在遵守学校相关规定的前提下使用。
+- 课件、录播、字幕等课程资料的版权归原作者所有，仅供个人学习使用，请勿传播或用于商业用途。
+- 本工具按“现状”提供，不对其可用性、准确性及使用后果作任何保证。
+
 ---
 
 ## 命令行使用
@@ -92,14 +102,24 @@ Token 具有与账号相同的访问权限，请勿泄露，也不要在与 Agen
 需要 [uv](https://docs.astral.sh/uv/)（macOS 可通过 `brew install uv` 安装）。
 
 ```bash
-git clone https://github.com/ZHS-XER/CanvasKit.git
-uv tool install -e ./CanvasKit
-mkdir -p ~/.claude/skills
-ln -s "$PWD/CanvasKit/skills/canvaskit" ~/.claude/skills/canvaskit
-canvaskit --help
+uv tool install git+https://github.com/ZHS-XER/CanvasKit
+canvaskit skill install        # 将 Skill 安装到 ~/.claude/skills/canvaskit/
+canvaskit --version
 ```
 
-其中 `ln -s` 一行将 Skill 安装到 Claude Code；其他 Agent 可将 `skills/canvaskit/SKILL.md` 作为工具说明使用。
+其他 Agent 可通过 `canvaskit skill path` 获取 SKILL.md 的位置，作为工具说明使用。
+
+### 升级与卸载
+
+```bash
+uv tool upgrade canvaskit
+canvaskit skill install --force   # 同步新版 Skill
+
+canvaskit skill uninstall
+uv tool uninstall canvaskit
+```
+
+卸载工具不会删除 `~/.config/canvaskit/` 中的 Token、配置与下载记录，如不再使用请手动删除。
 
 ### 凭证
 
@@ -133,6 +153,7 @@ subtitle_format = "srt,txt"      # 字幕格式，默认 srt,txt
 | `canvaskit download <课程> <选择条件> [--dry-run]` | 下载文件，选择条件为 `--new`、`--id`、`-m`、`--since` 或 `--all` |
 | `canvaskit subtitles <课程> [<选择条件>] [--format srt,txt]` | 下载字幕，选择条件为 `--latest`、`--date`、`--since` 或 `--id` |
 | `canvaskit snapshots <课程> [-o <目录>] [--brief] [--images]` | 获取课堂截图：摘要、完整 OCR 或图片 |
+| `canvaskit skill install / uninstall / path` | 安装、卸载 Claude Code Skill，或显示 SKILL.md 位置 |
 
 示例：
 
@@ -162,3 +183,7 @@ canvaskit subtitles 高数 --latest 1 --format txt
 ## 开发
 
 参见 [AGENTS.md](AGENTS.md)。
+
+## 许可证
+
+[MIT](LICENSE)

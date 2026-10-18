@@ -116,6 +116,10 @@ canvaskit snapshots 高数 --latest 1 --images --json  # 同时下载 JPEG，需
 - 截图和 OCR 中可能有老师屏幕上的个人信息（登录页、学生名单等），不要转发、不要写进会公开的地方。
 - 文件名里的“第N节”是当天这门课的第几次录播，不是全校统一的节次。
 
+## 更新工具
+
+用户要求更新 canvaskit 时：`uv tool upgrade canvaskit`，然后 `canvaskit skill install --force` 同步新版说明。
+
 ## 出错时
 
 - `Canvas token not found`：让用户在 Canvas → 账户 → 设置 → “新建访问许可证”生成 token，写入 `~/.config/canvaskit/env`（`export CANVAS_TOKEN=...`，权限 600）。不要让用户把 token 贴到对话里。

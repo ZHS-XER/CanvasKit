@@ -7,10 +7,16 @@
 面向 agent 的交大 Canvas 命令行工具，Python ≥ 3.10，依赖 httpx / typer / rich（3.10 另需 tomli），用 uv 管理。
 
 ```bash
+git clone https://github.com/ZHS-XER/CanvasKit.git && cd CanvasKit
 uv sync                 # 安装依赖
 uv run pytest           # 单元测试，不访问网络
 uv run canvaskit --help
+uv tool install -e .    # 可选：把开发版装成全局命令，改代码即时生效
 ```
+
+开发时如需让 Claude Code 直接使用仓库里的 SKILL.md，可以用链接代替复制：`ln -s "$PWD/skills/canvaskit" ~/.claude/skills/canvaskit`。`canvaskit skill install` 遇到链接时不会覆盖（除非 `--force`）。
+
+CI（`.github/workflows/ci.yml`）在 Ubuntu / macOS × Python 3.10 / 3.12 上运行 `uv sync --locked` 与 pytest，并构建 wheel、从 wheel 安装后验证 `canvaskit skill install`。改了依赖要 `uv lock` 并提交 `uv.lock`。
 
 改动后至少跑 `uv run pytest`。需要真实验证时用 `uv run canvaskit ... --json`，它会读本机的 token。
 
@@ -24,7 +30,8 @@ uv run canvaskit --help
 | `src/canvaskit/video.py` | 交大录播平台：LTI 登录链和录播、字幕、截图接口 |
 | `src/canvaskit/formats.py` | 输出格式：srt、txt、slides.md、slides.json |
 | `src/canvaskit/cli.py` | typer 命令，只做参数处理、选择、输出 |
-| `skills/canvaskit/SKILL.md` | 给使用者 agent 的说明，命令或输出变了要同步更新 |
+| `src/canvaskit/skill.py` | `canvaskit skill install/uninstall/path`：把 SKILL.md 复制到 `~/.claude/skills/canvaskit/` |
+| `skills/canvaskit/SKILL.md` | 给使用者 agent 的说明，命令或输出变了要同步更新。构建时打包进 wheel（`canvaskit/skill/SKILL.md`，见 `pyproject.toml`） |
 
 `canvas.py` 只依赖 Canvas 标准 API，换 `CANVAS_BASE_URL` 可用于其他学校；`video.py` 是交大专属的。不要把交大专属的东西写进 `canvas.py`。
 
