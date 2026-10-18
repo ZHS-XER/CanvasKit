@@ -49,7 +49,8 @@ def _read_env_file(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     if not path.is_file():
         return values
-    for line in path.read_text().splitlines():
+    # utf-8-sig: Windows PowerShell 5 writes a BOM, which would otherwise end up in the first key.
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue

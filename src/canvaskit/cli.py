@@ -49,6 +49,24 @@ def _main(
 ) -> None:
     pass
 
+
+def _utf8_streams() -> None:
+    """Windows pipes default to the ANSI code page (e.g. GBK), so an agent reading our JSON gets
+    mojibake, and characters outside that code page crash the write. Force UTF-8 instead."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
+def main() -> None:
+    """Console-script entry point."""
+    if sys.platform == "win32":
+        _utf8_streams()
+    app()
+
+
 CourseArg = typer.Argument(..., help="Course id, part of its name (e.g. 高数), or a key from config.toml")
 JsonOpt = typer.Option(False, "--json", help="Print machine-readable JSON to stdout")
 SUBTITLE_FORMATS = {"srt", "txt"}
@@ -755,4 +773,4 @@ def skill_path() -> None:
 
 
 if __name__ == "__main__":
-    app()
+    main()

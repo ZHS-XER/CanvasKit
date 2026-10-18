@@ -29,6 +29,21 @@ def test_relative_folder_and_safe_name():
     assert _relative_folder("course files/2025/ppt") == "2025/ppt"
     assert _relative_folder("other") == "other"
     assert safe_name("a/b:c") == "a_b_c"
+    assert safe_name('a?b*c"d<e>f|g.pdf', windows=False) == 'a?b*c"d<e>f|g.pdf'  # unchanged off Windows
+
+
+def test_safe_name_windows_rules():
+    assert safe_name('a?b*c"d<e>f|g.pdf', windows=True) == "a_b_c_d_e_f_g.pdf"
+    assert safe_name("讲义 v2. ", windows=True) == "讲义 v2"  # trailing dot / space
+    assert safe_name("con.pdf", windows=True) == "_con.pdf"
+    assert safe_name("console.pdf", windows=True) == "console.pdf"
+    assert safe_name("?", windows=True) == "_"
+
+
+def test_env_file_with_bom(tmp_path):
+    p = tmp_path / "env"
+    p.write_bytes("\ufeffCANVAS_TOKEN=abc\r\n".encode("utf-8"))  # as written by Windows PowerShell 5
+    assert _read_env_file(p) == {"CANVAS_TOKEN": "abc"}
 
 
 def test_env_file(tmp_path):

@@ -1,5 +1,6 @@
 import json
 
+import pytest
 from typer.testing import CliRunner
 
 from canvaskit import cli, skill
@@ -36,7 +37,10 @@ def test_install_keeps_a_developer_symlink_unless_forced(tmp_path):
     (checkout / "SKILL.md").write_text("dev copy", encoding="utf-8")
     skills = tmp_path / "skills"
     skills.mkdir()
-    (skills / "canvaskit").symlink_to(checkout)
+    try:
+        (skills / "canvaskit").symlink_to(checkout)
+    except OSError:  # Windows without Developer Mode cannot create symlinks
+        pytest.skip("symlinks not permitted")
 
     assert skill.install(skills)[0] == "exists"
     assert (skills / "canvaskit").is_symlink()

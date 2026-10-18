@@ -16,7 +16,7 @@ uv tool install -e .    # 可选：把开发版装成全局命令，改代码即
 
 开发时如需让 Claude Code 直接使用仓库里的 SKILL.md，可以用链接代替复制：`ln -s "$PWD/skills/canvaskit" ~/.claude/skills/canvaskit`。`canvaskit skill install` 遇到链接时不会覆盖（除非 `--force`）。
 
-CI（`.github/workflows/ci.yml`）在 Ubuntu / macOS × Python 3.10 / 3.12 上运行 `uv sync --locked` 与 pytest，并构建 wheel、从 wheel 安装后验证 `canvaskit skill install`。改了依赖要 `uv lock` 并提交 `uv.lock`。
+CI（`.github/workflows/ci.yml`）在 Ubuntu / macOS / Windows × Python 3.10 / 3.12 上运行 `uv sync --locked` 与 pytest，并构建 wheel、从 wheel 安装后验证 `canvaskit skill install`。改了依赖要 `uv lock` 并提交 `uv.lock`。
 
 改动后至少跑 `uv run pytest`。需要真实验证时用 `uv run canvaskit ... --json`，它会读本机的 token。
 
@@ -60,6 +60,7 @@ CI（`.github/workflows/ci.yml`）在 Ubuntu / macOS × Python 3.10 / 3.12 上�
 - 录播文件命名与 SJTU Canvas Helper 一致：`高等数学 第5周 周三 第2节.srt`，“第N节”是当天这门课的第几次录播。
 - 面向 LLM 的输出尽量省 token（例如 txt 字幕合并段落）。
 - 代码注释和 `--help` 用英文；README 和 SKILL.md 用中文。
+- 跨平台：文件名一律经过 `safe_name`；Windows 专属的处理（更严格的文件名规则、stdout 强制 UTF-8）只在 Windows 上生效，不改变 macOS / Linux 的行为。读写文本文件显式写 `encoding`。
 
 ## 安全
 

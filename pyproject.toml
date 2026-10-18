@@ -30,7 +30,7 @@ Homepage = "https://github.com/ZHS-XER/CanvasKit"
 Issues = "https://github.com/ZHS-XER/CanvasKit/issues"
 
 [project.scripts]
-canvaskit = "canvaskit.cli:app"
+canvaskit = "canvaskit.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]

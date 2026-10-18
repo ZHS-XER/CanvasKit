@@ -122,7 +122,7 @@ canvaskit snapshots 高数 --latest 1 --images --json  # 同时下载 JPEG，需
 
 ## 出错时
 
-- `Canvas token not found`：让用户在 Canvas → 账户 → 设置 → “新建访问许可证”生成 token，写入 `~/.config/canvaskit/env`（`export CANVAS_TOKEN=...`，权限 600）。不要让用户把 token 贴到对话里。
+- `Canvas token not found`：让用户在 Canvas → 账户 → 设置 → “新建访问许可证”生成 token，写入 `~/.config/canvaskit/env`（`export CANVAS_TOKEN=...`，权限 600；Windows 上写 `CANVAS_TOKEN=...`，README 里有 PowerShell 命令）。不要让用户把 token 贴到对话里。
 - `whoami` 报 `-> 401`：token 失效或被撤销，让用户重新生成。
 - `state/<id>.json is corrupt`：文件清单损坏，删掉该文件后重新 `sync` 即可（本地已有的文件会按同名同大小重新认出来）。
 - `No courses configured` / `is not a configured course`：在 `config.toml` 里添加课程（见上）。

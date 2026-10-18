@@ -82,8 +82,20 @@ def _relative_folder(full_name: str) -> str:
     return full_name
 
 
-def safe_name(name: str) -> str:
-    return re.sub(r'[/\\:\x00]', "_", name).strip() or "_"
+WINDOWS = os.name == "nt"
+_WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+
+
+def safe_name(name: str, windows: bool = WINDOWS) -> str:
+    """Make a file name valid on this OS. Windows rules are stricter and only applied there,
+    so names on macOS / Linux stay as they were."""
+    if not windows:
+        return re.sub(r'[/\\:\x00]', "_", name).strip() or "_"
+    # Windows also forbids <>"|?* and control characters, drops trailing dots, and reserves device names.
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).strip().rstrip(".")
+    if name.split(".", 1)[0].upper() in _WINDOWS_RESERVED:
+        name = "_" + name
+    return name or "_"
 
 
 class CanvasClient:

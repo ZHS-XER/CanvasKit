@@ -25,12 +25,24 @@ CanvasKit 是面向 Agent（如 Claude Code）的上海交通大学 Canvas（`oc
 
 **保存 Token**
 
-在终端中执行以下命令，按提示粘贴 Token 并回车（输入内容不会显示）：
+在终端中执行以下命令，按提示粘贴 Token 并回车（输入内容不会显示）。
+
+macOS / Linux：
 
 ```bash
 mkdir -p ~/.config/canvaskit
 echo -n "请粘贴 Token 并回车: "; read -rs t; echo "export CANVAS_TOKEN=$t" > ~/.config/canvaskit/env; unset t
 chmod 600 ~/.config/canvaskit/env
+```
+
+Windows（PowerShell）：
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.config\canvaskit" | Out-Null
+$s = Read-Host "请粘贴 Token 并回车" -AsSecureString
+$t = [Net.NetworkCredential]::new("", $s).Password
+Set-Content -Path "$HOME\.config\canvaskit\env" -Value "CANVAS_TOKEN=$t" -Encoding ascii
+Remove-Variable s, t
 ```
 
 Token 具有与账号相同的访问权限，请勿泄露，也不要在与 Agent 的对话中直接发送。
@@ -99,7 +111,7 @@ Token 具有与账号相同的访问权限，请勿泄露，也不要在与 Agen
 
 ### 安装
 
-需要 [uv](https://docs.astral.sh/uv/)（macOS 可通过 `brew install uv` 安装）。
+需要 [uv](https://docs.astral.sh/uv/)：macOS 可通过 `brew install uv` 安装，Windows 可通过 `winget install --id=astral-sh.uv -e` 安装。
 
 ```bash
 uv tool install git+https://github.com/ZHS-XER/CanvasKit
@@ -108,6 +120,8 @@ canvaskit --version
 ```
 
 其他 Agent 可通过 `canvaskit skill path` 获取 SKILL.md 的位置，作为工具说明使用。
+
+Windows 上如果安装后提示找不到 `canvaskit` 命令，运行 `uv tool update-shell` 并重新打开终端。
 
 ### 升级与卸载
 
@@ -123,7 +137,7 @@ uv tool uninstall canvaskit
 
 ### 凭证
 
-依次读取环境变量 `CANVAS_TOKEN` 和 `~/.config/canvaskit/env`（格式为 `export CANVAS_TOKEN=...`）。
+依次读取环境变量 `CANVAS_TOKEN` 和 `~/.config/canvaskit/env`（格式为 `export CANVAS_TOKEN=...` 或 `CANVAS_TOKEN=...`；Windows 上即 `%USERPROFILE%\.config\canvaskit\env`）。
 可通过 `CANVAS_BASE_URL` 指定 Canvas 地址，默认为 `https://oc.sjtu.edu.cn`。
 
 ### 课程配置

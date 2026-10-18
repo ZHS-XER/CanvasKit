@@ -1,7 +1,9 @@
 """Command-level tests with fake Canvas / video clients: stdout stays pure JSON, one failing item
 does not stop a batch, and interrupted or partial work is picked up again on the next run."""
 
+import io
 import json
+import sys
 from pathlib import Path
 
 import httpx
@@ -93,6 +95,16 @@ def fakes(monkeypatch, tmp_path):
 def run_json(*args):
     result = runner.invoke(cli.app, [*args, "--json"])
     return result, json.loads(result.stdout)
+
+
+def test_utf8_streams_fix_windows_code_pages(monkeypatch):
+    stdout = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+    monkeypatch.setattr(sys, "stdout", stdout)
+    monkeypatch.setattr(sys, "stderr", io.StringIO())  # no reconfigure(): must be skipped quietly
+    cli._utf8_streams()
+    print('{"name": "高等数学 第5周"}')
+    stdout.flush()
+    assert stdout.buffer.getvalue().decode("utf-8").startswith('{"name": "高等数学')
 
 
 def test_version():
