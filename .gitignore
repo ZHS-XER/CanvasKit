@@ -1,0 +1,27 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+*.part
+.DS_Store
+.claude/settings.local.json
+
+# never commit credentials or downloaded course data
+env
+.env
+config.toml
+state/
+*.srt
+*.slides.md
+*.slides.json
+*.slides.brief.md
+*-slides/
+*.txt
+# course files downloaded for testing
+*.pdf
+*.ppt
+*.pptx
+*.doc
+*.docx
+*.jpg
