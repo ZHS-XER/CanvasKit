@@ -58,6 +58,7 @@ CI（`.github/workflows/ci.yml`）在 Ubuntu / macOS / Windows × Python 3.10 / 
 - 幂等：输出已存在就跳过，`--force` 才覆盖。文件先写 `.part` 再改名。
 - 单项失败不中断整批，记为 `status: "error"` 继续处理；致命错误退出码 `1`，缺 token / 配置错误退出码 `2`（typer 的参数错误也是 `2`）。
 - 录播文件命名与 SJTU Canvas Helper 一致：`高等数学 第5周 周三 第2节.srt`，“第N节”是当天这门课的第几次录播。
+- 耗时在网络上（Canvas 每个请求 0.5–2 s，录播平台每份字幕 1–3 s），互不依赖的请求用 `canvas.parallel` 并发，结果保持原有顺序。并发上限由客户端统一控制（`canvas.MAX_IN_FLIGHT`、`video.MAX_IN_FLIGHT`），不要绕过；Canvas 限流返回的 403 会自动重试。stderr 的进度行可能乱序，stdout 结果不会。
 - 面向 LLM 的输出尽量省 token（例如 txt 字幕合并段落）。
 - 代码注释和 `--help` 用英文；README 和 SKILL.md 用中文。
 - 跨平台：文件名一律经过 `safe_name`；Windows 专属的处理（更严格的文件名规则、stdout 强制 UTF-8）只在 Windows 上生效，不改变 macOS / Linux 的行为。读写文本文件显式写 `encoding`。

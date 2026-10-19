@@ -21,7 +21,7 @@ from rich.markup import escape
 from rich.progress import BarColumn, DownloadColumn, Progress, TextColumn, TransferSpeedColumn
 from rich.table import Table
 
-from .canvas import CanvasClient, CanvasError, Course, CourseFile
+from .canvas import CanvasClient, CanvasError, Course, CourseFile, parallel
 from .config import CONFIG_FILE, ConfigError, CourseConfig, find_course_config, load_config, load_courses
 from .formats import clock, slides_brief, slides_json, slides_markdown, to_srt, to_text
 from . import skill
@@ -265,42 +265,40 @@ def lectures(course: str = CourseArg, as_json: bool = JsonOpt) -> None:
 
 def _fetch_subtitles(v: VideoClient, items: list[Lecture], out_dir: Path, formats: list[str],
                      force: bool) -> list[dict[str, Any]]:
-    """Write missing subtitle files; existing ones are kept unless force."""
-    results = []
-    for lec in items:
-        paths = {f: out_dir / f"{escape(lec.title)}.{f}" for f in formats}
-        todo = {f: p for f, p in paths.items() if force or not p.exists()}
-        entry: dict[str, Any] = {"lecture": lec.to_dict(), "files": [str(p) for p in paths.values()]}
-        if not todo:
-            entry["status"] = "exists"
-            results.append(entry)
-            err.print(f"[dim]= {escape(lec.title)} (exists)[/dim]")
-            continue
-        try:
-            tr = v.transcript(lec.id)
-        except (VideoError, httpx.HTTPError) as e:
-            entry.update(status="error", error=str(e), files=[])
-            results.append(entry)
-            err.print(f"[yellow]! {escape(lec.title)}: {escape(str(e))}[/yellow]")
-            continue
-        if not tr.sentences and not tr.paragraphs:
-            entry.update(status="unavailable", files=[])
-            results.append(entry)
-            err.print(f"[yellow]- {escape(lec.title)}: no subtitles yet[/yellow]")
-            continue
-        try:
-            out_dir.mkdir(parents=True, exist_ok=True)
-            for f, p in todo.items():
-                _write(p, to_srt(tr) if f == "srt" else to_text(tr, lec))
-        except OSError as e:
-            entry.update(status="error", error=str(e), files=[])
-            results.append(entry)
-            err.print(f"[yellow]! {escape(lec.title)}: {escape(str(e))}[/yellow]")
-            continue
-        entry["status"] = "downloaded"
-        results.append(entry)
-        err.print(f"[green]+ {escape(lec.title)}[/green] ({', '.join(todo)})")
-    return results
+    """Write missing subtitle files; existing ones are kept unless force. Lectures are fetched in
+    parallel (the platform takes seconds per transcript); results keep the lecture order."""
+    return parallel([lambda lec=lec: _fetch_subtitle(v, lec, out_dir, formats, force) for lec in items])
+
+
+def _fetch_subtitle(v: VideoClient, lec: Lecture, out_dir: Path, formats: list[str], force: bool) -> dict[str, Any]:
+    paths = {f: out_dir / f"{lec.title}.{f}" for f in formats}
+    todo = {f: p for f, p in paths.items() if force or not p.exists()}
+    entry: dict[str, Any] = {"lecture": lec.to_dict(), "files": [str(p) for p in paths.values()]}
+    if not todo:
+        entry["status"] = "exists"
+        err.print(f"[dim]= {escape(lec.title)} (exists)[/dim]")
+        return entry
+    try:
+        tr = v.transcript(lec.id)
+    except (VideoError, httpx.HTTPError) as e:
+        entry.update(status="error", error=str(e), files=[])
+        err.print(f"[yellow]! {escape(lec.title)}: {escape(str(e))}[/yellow]")
+        return entry
+    if not tr.sentences and not tr.paragraphs:
+        entry.update(status="unavailable", files=[])
+        err.print(f"[yellow]- {escape(lec.title)}: no subtitles yet[/yellow]")
+        return entry
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for f, p in todo.items():
+            _write(p, to_srt(tr) if f == "srt" else to_text(tr, lec))
+    except OSError as e:
+        entry.update(status="error", error=str(e), files=[])
+        err.print(f"[yellow]! {escape(lec.title)}: {escape(str(e))}[/yellow]")
+        return entry
+    entry["status"] = "downloaded"
+    err.print(f"[green]+ {escape(lec.title)}[/green] ({', '.join(todo)})")
+    return entry
 
 
 @app.command()
@@ -360,10 +358,10 @@ def snapshots(
             _fail(e)
         with v:
             for lec in _select(items, latest, since, on, ids):
-                md = target / f"{escape(lec.title)}.slides.md"
-                js = target / f"{escape(lec.title)}.slides.json"
-                bf = target / f"{escape(lec.title)}.slides.brief.md"
-                img_dir = target / f"{escape(lec.title)}-slides"
+                md = target / f"{lec.title}.slides.md"
+                js = target / f"{lec.title}.slides.json"
+                bf = target / f"{lec.title}.slides.brief.md"
+                img_dir = target / f"{lec.title}-slides"
                 targets = [bf] if brief else [md, js]
                 entry: dict[str, Any] = {"lecture": lec.to_dict(), "files": [str(p) for p in targets]}
                 if images:
@@ -699,14 +697,17 @@ def sync(
             err.print(f"[red]'{escape(q)}' is not a configured course ({escape(', '.join(configured))})[/red]")
             raise typer.Exit(2)
         targets.append(cfg)
-    reports = []
+
+    def one(cfg: CourseConfig) -> dict[str, Any]:
+        try:
+            return _sync_course(c, cfg, not no_subtitles, not no_files)
+        except REQUEST_ERRORS as e:
+            err.print(f"[yellow]! {escape(cfg.key)}: {escape(str(e))}[/yellow]")
+            return {"course": cfg.key, "course_id": cfg.canvas_id, "error": str(e)}
+
+    # Courses are independent; the clients cap concurrent requests per site.
     with _client() as c:
-        for cfg in targets:
-            try:
-                reports.append(_sync_course(c, cfg, not no_subtitles, not no_files))
-            except REQUEST_ERRORS as e:
-                err.print(f"[yellow]! {escape(cfg.key)}: {escape(str(e))}[/yellow]")
-                reports.append({"course": cfg.key, "course_id": cfg.canvas_id, "error": str(e)})
+        reports = parallel([lambda cfg=cfg: one(cfg) for cfg in targets])
     if as_json:
         _emit_json(reports)
         return

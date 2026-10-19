@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import os
 import re
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, Iterator, Sequence, TypeVar
 
 import httpx
 
@@ -15,6 +18,12 @@ from .config import Config
 
 USER_AGENT = "canvaskit/0.1 (+https://github.com/)"
 ROOT_FOLDER = "course files"
+# Canvas throttles per token (a leaky bucket where every open request holds a share), so keep the
+# number of requests in flight bounded no matter how many threads are asking.
+MAX_IN_FLIGHT = 8
+RATE_LIMIT_RETRIES = 3
+
+T = TypeVar("T")
 
 
 class CanvasError(Exception):
@@ -63,6 +72,22 @@ class CourseFile:
 FILE_LINK = re.compile(r"/files/(\d+)")
 
 
+def parallel(calls: Sequence[Callable[[], T]], workers: int = MAX_IN_FLIGHT) -> list[T]:
+    """Run independent calls on a thread pool and return their results in order.
+
+    Requests are network-bound, so threads overlap the waiting. If a call raises, the calls
+    not started yet are cancelled and the exception propagates.
+    """
+    if len(calls) <= 1:
+        return [call() for call in calls]
+    pool = ThreadPoolExecutor(min(workers, len(calls)))
+    try:
+        futures = [pool.submit(call) for call in calls]
+        return [f.result() for f in futures]
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+
+
 def _next_link(link_header: str | None) -> str | None:
     if not link_header:
         return None
@@ -107,6 +132,7 @@ class CanvasClient:
             timeout=timeout,
             follow_redirects=True,
         )
+        self._slots = threading.BoundedSemaphore(MAX_IN_FLIGHT)
 
     def close(self) -> None:
         self.http.close()
@@ -119,8 +145,18 @@ class CanvasClient:
 
     # -- low level ---------------------------------------------------------
 
+    def _send(self, url: str, params: dict[str, Any] | None) -> httpx.Response:
+        """GET with bounded concurrency; waits and retries when Canvas reports throttling."""
+        for attempt in range(RATE_LIMIT_RETRIES + 1):
+            with self._slots:
+                resp = self.http.get(url, params=params)
+            if resp.status_code != 403 or "rate limit" not in resp.text.lower() or attempt == RATE_LIMIT_RETRIES:
+                return resp
+            time.sleep(2 ** attempt)
+        raise AssertionError("unreachable")
+
     def get(self, path: str, **params: Any) -> Any:
-        resp = self.http.get(path, params=params or None)
+        resp = self._send(path, params or None)
         self._raise_for_status(resp)
         return resp.json()
 
@@ -129,7 +165,7 @@ class CanvasClient:
         url: str | None = path
         first = True
         while url:
-            resp = self.http.get(url, params=params if first else None)
+            resp = self._send(url, params if first else None)
             self._raise_for_status(resp)
             yield from resp.json()
             url = _next_link(resp.headers.get("link"))
@@ -193,13 +229,62 @@ class CanvasClient:
           2. the Files listing ("文件库"), which also holds old versions and extras
           3. links in the home page, syllabus, pages, assignments, announcements and
              discussions; these can point to hidden files absent from the listing
+
+        The endpoints are independent, so they are fetched in parallel in three rounds:
+        the listings, then what they point to (module items, page bodies), then the
+        metadata of linked files missing from the Files listing.
         """
-        listed: dict[int, CourseFile] = {}
-        folders = self._optional(
-            lambda: {f["id"]: _relative_folder(f["full_name"])
-                     for f in self.paginate(f"/api/v1/courses/{course_id}/folders")}, {})
-        for f in self._optional(lambda: list(self.paginate(f"/api/v1/courses/{course_id}/files")), []):
-            listed[f["id"]] = self._file(f, folders.get(f["folder_id"], ""))
+        base = f"/api/v1/courses/{course_id}"
+
+        def listing(path: str, **params: Any) -> Callable[[], list[dict[str, Any]]]:
+            return lambda: self._optional(lambda: list(self.paginate(path, **params)), [])
+
+        def single(path: str, default: Any = None, **params: Any) -> Callable[[], Any]:
+            return lambda: self._optional(lambda: self.get(path, **params), default)
+
+        (folder_list, file_list, modules, info, front, pages, assignments, announcements,
+         discussions) = parallel([
+            listing(f"{base}/folders"),
+            listing(f"{base}/files"),
+            listing(f"{base}/modules", **{"include[]": "items"}),
+            single(base, {}, **{"include[]": "syllabus_body"}),
+            single(f"{base}/front_page"),
+            listing(f"{base}/pages"),
+            listing(f"{base}/assignments"),
+            listing("/api/v1/announcements", **{"context_codes[]": f"course_{course_id}"}, start_date="2000-01-01"),
+            listing(f"{base}/discussion_topics"),
+        ])
+        folders = {f["id"]: _relative_folder(f["full_name"]) for f in folder_list}
+        listed = {f["id"]: self._file(f, folders.get(f["folder_id"], "")) for f in file_list}
+
+        # Large modules come without inline items; the front page is already covered above.
+        bare = [m for m in modules if m.get("items") is None]
+        pages = [p for p in pages if not (front and p.get("url") == front.get("url"))]
+        fetched = parallel([listing(f"{base}/modules/{m['id']}/items") for m in bare]
+                           + [single(f"{base}/pages/{p['url']}") for p in pages])
+        module_items = {m["id"]: items for m, items in zip(bare, fetched)}
+        page_bodies = fetched[len(bare):]
+
+        from_modules = [(int(item["content_id"]), f"单元：{m.get('name') or ''}".strip())
+                        for m in modules for item in module_items.get(m["id"], m.get("items") or [])
+                        if item.get("type") == "File" and item.get("content_id")]
+        linked: list[tuple[str, str, list[dict[str, Any]]]] = []
+        if front:
+            linked.append(("链接：主页", front.get("body") or "", []))
+        linked.append(("链接：大纲", info.get("syllabus_body") or "", []))
+        linked += [(f"链接：页面 {p.get('title', '')}".strip(), full.get("body") or "", [])
+                   for p, full in zip(pages, page_bodies) if full]
+        linked += [(f"链接：作业 {a.get('name', '')}".strip(), a.get("description") or "", []) for a in assignments]
+        linked += [(f"链接：公告 {a.get('title', '')}".strip(), a.get("message") or "", a.get("attachments") or [])
+                   for a in announcements]
+        linked += [(f"链接：讨论 {d.get('title', '')}".strip(), d.get("message") or "", d.get("attachments") or [])
+                   for d in discussions]
+        from_links = [(file_id, source) for source, html, attachments in linked
+                      for file_id in [int(a["id"]) for a in attachments if a.get("id")]
+                      + [int(i) for i in FILE_LINK.findall(html)]]
+
+        hidden_ids = list(dict.fromkeys(i for i, _ in from_modules + from_links if i not in listed))
+        metas = dict(zip(hidden_ids, parallel([single(f"{base}/files/{i}") for i in hidden_ids])))
 
         found: dict[int, CourseFile] = {}
 
@@ -210,56 +295,21 @@ class CanvasClient:
                 cf = listed[file_id]
                 cf.source = source
             else:
-                meta = self._optional(lambda: self.get(f"/api/v1/courses/{course_id}/files/{file_id}"), None)
+                meta = metas.get(file_id)
                 if meta is None:
                     return
                 cf = self._file(meta, folders.get(meta.get("folder_id"), ""), source=source, hidden=True)
             found[file_id] = cf
 
-        for module in self._optional(
-                lambda: list(self.paginate(f"/api/v1/courses/{course_id}/modules", **{"include[]": "items"})), []):
-            items = module.get("items")
-            if items is None:
-                items = self._optional(
-                    lambda: list(self.paginate(f"/api/v1/courses/{course_id}/modules/{module['id']}/items")), [])
-            for item in items:
-                if item.get("type") == "File" and item.get("content_id"):
-                    add(int(item["content_id"]), f"单元：{module.get('name') or ''}".strip())
-
+        for file_id, source in from_modules:
+            add(file_id, source)
         for file_id, cf in listed.items():
             if file_id not in found:
                 cf.source = "文件库"
                 found[file_id] = cf
-
-        for source, html, attachments in self._linked_content(course_id):
-            for att in attachments:
-                if att.get("id"):
-                    add(int(att["id"]), source)
-            for file_id in FILE_LINK.findall(html or ""):
-                add(int(file_id), source)
+        for file_id, source in from_links:
+            add(file_id, source)
         return list(found.values())
-
-    def _linked_content(self, course_id: int) -> Iterator[tuple[str, str, list[dict[str, Any]]]]:
-        base = f"/api/v1/courses/{course_id}"
-        info = self._optional(lambda: self.get(base, **{"include[]": "syllabus_body"}), {})
-        front = self._optional(lambda: self.get(f"{base}/front_page"), None)
-        if front:
-            yield "链接：主页", front.get("body") or "", []
-        yield "链接：大纲", info.get("syllabus_body") or "", []
-        for page in self._optional(lambda: list(self.paginate(f"{base}/pages")), []):
-            if front and page.get("url") == front.get("url"):
-                continue
-            full = self._optional(lambda: self.get(f"{base}/pages/{page['url']}"), None)
-            if full:
-                yield f"链接：页面 {page.get('title', '')}".strip(), full.get("body") or "", []
-        for a in self._optional(lambda: list(self.paginate(f"{base}/assignments")), []):
-            yield f"链接：作业 {a.get('name', '')}".strip(), a.get("description") or "", []
-        announcements = self._optional(lambda: list(self.paginate(
-            "/api/v1/announcements", **{"context_codes[]": f"course_{course_id}"}, start_date="2000-01-01")), [])
-        for a in announcements:
-            yield f"链接：公告 {a.get('title', '')}".strip(), a.get("message") or "", a.get("attachments") or []
-        for d in self._optional(lambda: list(self.paginate(f"{base}/discussion_topics")), []):
-            yield f"链接：讨论 {d.get('title', '')}".strip(), d.get("message") or "", d.get("attachments") or []
 
     @staticmethod
     def _file(f: dict[str, Any], folder: str, source: str = "文件库", hidden: bool = False) -> CourseFile:

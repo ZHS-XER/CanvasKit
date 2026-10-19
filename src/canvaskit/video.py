@@ -8,6 +8,7 @@ Auth chain, token only:
 from __future__ import annotations
 
 import re
+import threading
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
@@ -22,6 +23,10 @@ from .canvas import USER_AGENT, CanvasClient, CanvasError, safe_name
 VIDEO_TOOL_ID = 8329  # "课堂视频新版"
 RESOURCE_BASE = "https://v.sjtu.edu.cn/jy-application-resourcemanage"
 RESOURCE_UI = "https://v.sjtu.edu.cn/jy-application-resourcemanage-ui/"
+# Shared by every VideoClient, so syncing several courses at once still keeps the platform's load modest.
+MAX_IN_FLIGHT = 6
+_slots = threading.BoundedSemaphore(MAX_IN_FLIGHT)
+
 WEEKDAYS = {1: "周一", 2: "周二", 3: "周三", 4: "周四", 5: "周五", 6: "周六", 7: "周日"}
 
 
@@ -250,6 +255,7 @@ class VideoClient:
         self.course_id = course_id
         self.http = httpx.Client(timeout=timeout, headers={"User-Agent": USER_AGENT})
         self._jwt: str | None = None
+        self._jwt_lock = threading.Lock()
         self._teaching_class_id: int | None = None
 
     def close(self) -> None:
@@ -290,16 +296,15 @@ class VideoClient:
 
     @property
     def jwt(self) -> str:
-        if self._jwt is None:
-            self._jwt = self._launch()
-        return self._jwt
+        with self._jwt_lock:  # requests may run on several threads; log in only once
+            if self._jwt is None:
+                self._jwt = self._launch()
+            return self._jwt
 
     def _get(self, path: str, **params: Any) -> Any:
-        resp = self.http.get(
-            f"{RESOURCE_BASE}{path}",
-            params=params or None,
-            headers={"jwt-token": self.jwt, "Referer": RESOURCE_UI},
-        )
+        headers = {"jwt-token": self.jwt, "Referer": RESOURCE_UI}
+        with _slots:
+            resp = self.http.get(f"{RESOURCE_BASE}{path}", params=params or None, headers=headers)
         if resp.status_code >= 400:
             raise VideoError(f"GET {path} -> HTTP {resp.status_code}: {resp.text[:200]}")
         return _api_data(resp.json())

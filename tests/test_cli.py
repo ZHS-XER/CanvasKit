@@ -4,6 +4,7 @@ does not stop a batch, and interrupted or partial work is picked up again on the
 import io
 import json
 import sys
+import time
 from pathlib import Path
 
 import httpx
@@ -125,13 +126,26 @@ def test_subtitles_stdout_is_json_and_titles_are_safe_file_names(fakes):
     assert [r["status"] for r in again] == ["exists", "exists"]
 
 
+def test_file_names_are_not_markup_escaped(fakes, monkeypatch):
+    # "[lab]" looks like Rich markup; escaping is for console output only, not file names.
+    lec = Lecture(13, "[lab]电路", "", "", "2026-10-12 08:00:00", "2026-10-12 09:40:00", 5, 1, 1, 1)
+    monkeypatch.setattr(FakeVideo, "lectures", lambda self: [lec])
+    out = fakes / "subs"
+    result, _ = run_json("subtitles", "c", "-o", str(out), "--format", "srt")
+    assert result.exit_code == 0
+    result, _ = run_json("snapshots", "c", "-o", str(out))
+    assert result.exit_code == 0
+    assert sorted(p.name for p in out.iterdir()) == [
+        "[lab]电路 第5周 周一 第1节.slides.json", "[lab]电路 第5周 周一 第1节.slides.md",
+        "[lab]电路 第5周 周一 第1节.srt",
+    ]
+
+
 def test_subtitles_write_error_does_not_stop_the_batch(fakes, monkeypatch):
     real_write = cli._write
-    calls = []
 
     def flaky_write(path, data):
-        calls.append(path)
-        if len(calls) == 1:
+        if path.name.startswith(LECTURES[0].title):  # lectures are written concurrently: pick by name
             raise OSError("disk full")
         real_write(path, data)
 
@@ -168,6 +182,18 @@ def test_sync_keeps_subtitles_when_file_check_fails(fakes, monkeypatch):
     assert result.exit_code == 0
     assert [s["status"] for s in data[0]["subtitles"]] == ["downloaded", "downloaded"]
     assert "500" in data[0]["files_error"]
+
+
+def test_sync_reports_follow_config_order(fakes, monkeypatch):
+    # Courses run in parallel; make the first one finish last.
+    configs = {k: CourseConfig(key=k, canvas_id=i, dir=fakes / k) for i, k in enumerate(["a", "b", "c"], 1)}
+    monkeypatch.setattr(cli, "_courses_config", lambda: configs)
+    slow = {1: 0.05, 2: 0.0, 3: 0.02}
+    monkeypatch.setattr(FakeCanvas, "resolve_course",
+                        lambda self, q: (time.sleep(slow[int(q)]), Course(int(q), f"课程{q}", "", None))[1])
+    result, data = run_json("sync", "--no-subtitles")
+    assert result.exit_code == 0, result.output
+    assert [(r["course"], r["course_id"]) for r in data] == [("a", 1), ("b", 2), ("c", 3)]
 
 
 def test_corrupt_manifest_is_a_config_error(fakes):
