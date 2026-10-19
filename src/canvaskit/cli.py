@@ -17,6 +17,7 @@ from typing import Any, Optional
 import httpx
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.progress import BarColumn, DownloadColumn, Progress, TextColumn, TransferSpeedColumn
 from rich.table import Table
 
@@ -77,7 +78,7 @@ def _client() -> CanvasClient:
     try:
         return CanvasClient(load_config())
     except ConfigError as e:
-        err.print(f"[red]{e}[/red]")
+        err.print(f"[red]{escape(str(e))}[/red]")
         raise typer.Exit(2)
 
 
@@ -85,7 +86,7 @@ def _courses_config() -> dict[str, CourseConfig]:
     try:
         return load_courses()
     except ConfigError as e:
-        err.print(f"[red]{e}[/red]")
+        err.print(f"[red]{escape(str(e))}[/red]")
         raise typer.Exit(2)
 
 
@@ -93,7 +94,7 @@ def _manifest(course_id: int) -> Manifest:
     try:
         return Manifest(course_id)
     except ConfigError as e:
-        err.print(f"[red]{e}[/red]")
+        err.print(f"[red]{escape(str(e))}[/red]")
         raise typer.Exit(2)
 
 
@@ -108,7 +109,7 @@ def _write(path: Path, data: str | bytes) -> None:
 
 
 def _fail(e: Exception) -> None:
-    err.print(f"[red]error:[/red] {e}")
+    err.print(f"[red]error:[/red] {escape(str(e))}")
     raise typer.Exit(1)
 
 
@@ -205,7 +206,7 @@ def whoami(as_json: bool = JsonOpt) -> None:
     if as_json:
         _emit_json({"id": me["id"], "name": me.get("name"), "base_url": c.config.base_url})
     else:
-        out.print(f"{me.get('name')} (id {me['id']}) @ {c.config.base_url}")
+        out.print(escape(f"{me.get('name')} (id {me['id']}) @ {c.config.base_url}"))
 
 
 @app.command()
@@ -226,7 +227,7 @@ def courses(
         return
     t = Table("id", "name", "code", "config")
     for x in items:
-        t.add_row(str(x.id), x.name, x.course_code, configured[x.id].key if x.id in configured else "")
+        t.add_row(str(x.id), escape(x.name), escape(x.course_code), escape(configured[x.id].key) if x.id in configured else "")
     out.print(t)
 
 
@@ -235,7 +236,7 @@ def courses(
 
 def _lectures_for(c: CanvasClient, crs: Course) -> tuple[VideoClient, list[Lecture]]:
     v = VideoClient(c, crs.id)
-    err.print(f"[dim]{crs.name} (course {crs.id})[/dim]")
+    err.print(f"[dim]{escape(crs.name)} (course {crs.id})[/dim]")
     try:
         return v, v.lectures()
     except BaseException:
@@ -258,7 +259,7 @@ def lectures(course: str = CourseArg, as_json: bool = JsonOpt) -> None:
         return
     t = Table("id", "title", "time", "room")
     for x in items:
-        t.add_row(str(x.id), x.title, f"{x.begin[:16]}–{x.end[11:16]}", x.classroom)
+        t.add_row(str(x.id), escape(x.title), f"{x.begin[:16]}–{x.end[11:16]}", escape(x.classroom))
     out.print(t)
 
 
@@ -267,25 +268,25 @@ def _fetch_subtitles(v: VideoClient, items: list[Lecture], out_dir: Path, format
     """Write missing subtitle files; existing ones are kept unless force."""
     results = []
     for lec in items:
-        paths = {f: out_dir / f"{lec.title}.{f}" for f in formats}
+        paths = {f: out_dir / f"{escape(lec.title)}.{f}" for f in formats}
         todo = {f: p for f, p in paths.items() if force or not p.exists()}
         entry: dict[str, Any] = {"lecture": lec.to_dict(), "files": [str(p) for p in paths.values()]}
         if not todo:
             entry["status"] = "exists"
             results.append(entry)
-            err.print(f"[dim]= {lec.title} (exists)[/dim]")
+            err.print(f"[dim]= {escape(lec.title)} (exists)[/dim]")
             continue
         try:
             tr = v.transcript(lec.id)
         except (VideoError, httpx.HTTPError) as e:
             entry.update(status="error", error=str(e), files=[])
             results.append(entry)
-            err.print(f"[yellow]! {lec.title}: {e}[/yellow]")
+            err.print(f"[yellow]! {escape(lec.title)}: {escape(str(e))}[/yellow]")
             continue
         if not tr.sentences and not tr.paragraphs:
             entry.update(status="unavailable", files=[])
             results.append(entry)
-            err.print(f"[yellow]- {lec.title}: no subtitles yet[/yellow]")
+            err.print(f"[yellow]- {escape(lec.title)}: no subtitles yet[/yellow]")
             continue
         try:
             out_dir.mkdir(parents=True, exist_ok=True)
@@ -294,11 +295,11 @@ def _fetch_subtitles(v: VideoClient, items: list[Lecture], out_dir: Path, format
         except OSError as e:
             entry.update(status="error", error=str(e), files=[])
             results.append(entry)
-            err.print(f"[yellow]! {lec.title}: {e}[/yellow]")
+            err.print(f"[yellow]! {escape(lec.title)}: {escape(str(e))}[/yellow]")
             continue
         entry["status"] = "downloaded"
         results.append(entry)
-        err.print(f"[green]+ {lec.title}[/green] ({', '.join(todo)})")
+        err.print(f"[green]+ {escape(lec.title)}[/green] ({', '.join(todo)})")
     return results
 
 
@@ -359,10 +360,10 @@ def snapshots(
             _fail(e)
         with v:
             for lec in _select(items, latest, since, on, ids):
-                md = target / f"{lec.title}.slides.md"
-                js = target / f"{lec.title}.slides.json"
-                bf = target / f"{lec.title}.slides.brief.md"
-                img_dir = target / f"{lec.title}-slides"
+                md = target / f"{escape(lec.title)}.slides.md"
+                js = target / f"{escape(lec.title)}.slides.json"
+                bf = target / f"{escape(lec.title)}.slides.brief.md"
+                img_dir = target / f"{escape(lec.title)}-slides"
                 targets = [bf] if brief else [md, js]
                 entry: dict[str, Any] = {"lecture": lec.to_dict(), "files": [str(p) for p in targets]}
                 if images:
@@ -372,19 +373,19 @@ def snapshots(
                 if not missing and not images:
                     entry["status"] = "exists"
                     results.append(entry)
-                    err.print(f"[dim]= {lec.title} (exists)[/dim]")
+                    err.print(f"[dim]= {escape(lec.title)} (exists)[/dim]")
                     continue
                 try:
                     shots = v.slides(lec)
                 except (VideoError, httpx.HTTPError) as e:
                     entry.update(status="error", error=str(e), files=[])
                     results.append(entry)
-                    err.print(f"[yellow]! {lec.title}: {e}[/yellow]")
+                    err.print(f"[yellow]! {escape(lec.title)}: {escape(str(e))}[/yellow]")
                     continue
                 if not shots:
                     entry.update(status="unavailable", files=[])
                     results.append(entry)
-                    err.print(f"[yellow]- {lec.title}: no snapshots[/yellow]")
+                    err.print(f"[yellow]- {escape(lec.title)}: no snapshots[/yellow]")
                     continue
                 names, fetched, failed = None, 0, 0
                 try:
@@ -401,19 +402,19 @@ def snapshots(
                 except OSError as e:
                     entry.update(status="error", error=str(e), files=[])
                     results.append(entry)
-                    err.print(f"[yellow]! {lec.title}: {e}[/yellow]")
+                    err.print(f"[yellow]! {escape(lec.title)}: {escape(str(e))}[/yellow]")
                     continue
                 entry["count"] = len(shots)
                 if failed:
                     entry.update(status="error",
                                  error=f"{failed} of {len(shots)} snapshot images failed; run again to retry")
-                    err.print(f"[yellow]! {lec.title}: {failed} snapshot images failed[/yellow]")
+                    err.print(f"[yellow]! {escape(lec.title)}: {failed} snapshot images failed[/yellow]")
                 elif missing or fetched:
                     entry["status"] = "downloaded"
-                    err.print(f"[green]+ {lec.title}[/green] ({len(shots)} snapshots)")
+                    err.print(f"[green]+ {escape(lec.title)}[/green] ({len(shots)} snapshots)")
                 else:
                     entry["status"] = "exists"
-                    err.print(f"[dim]= {lec.title} (exists)[/dim]")
+                    err.print(f"[dim]= {escape(lec.title)} (exists)[/dim]")
                 results.append(entry)
     if as_json:
         _emit_json(results)
@@ -444,7 +445,7 @@ def _download_snapshot_images(http: httpx.Client, items: list, img_dir: Path,
             fetched += 1
         except httpx.HTTPError as e:
             failed += 1
-            err.print(f"[yellow]  snapshot {i}: {e}[/yellow]")
+            err.print(f"[yellow]  snapshot {i}: {escape(str(e))}[/yellow]")
     return names, fetched, failed
 
 
@@ -496,9 +497,9 @@ def files(
     if as_json:
         _emit_json([s.to_dict() for s in states])
         return
-    t = Table("id", "name", "size", "updated", "source", "status", title=f"{crs.name} — {len(states)} files")
+    t = Table("id", "name", "size", "updated", "source", "status", title=escape(f"{crs.name} — {len(states)} files"))
     for s in states:
-        t.add_row(str(s.file.id), s.file.name, _human_size(s.file.size), s.file.updated_at[:10],
+        t.add_row(str(s.file.id), escape(s.file.name), _human_size(s.file.size), s.file.updated_at[:10],
                   s.file.source, STATUS_LABEL.get(s.status, s.status))
     out.print(t)
 
@@ -525,16 +526,16 @@ def _download_states(c: CanvasClient, manifest: Manifest, chosen: list[FileState
                   console=err, transient=True) as progress:
         for s, dest in plan:
             f = s.file
-            task = progress.add_task(f.name[:40], total=f.size or None)
+            task = progress.add_task(escape(f.name[:40]), total=f.size or None)
             entry = {**s.to_dict(), "dest": str(dest)}
             try:
                 c.download(f.url, dest, lambda n, t=task: progress.advance(t, n), f.modified_at)
                 manifest.mark_downloaded(f, dest)
                 entry["status"] = "downloaded"
-                err.print(f"[green]+ {f.name}[/green] ({_human_size(f.size)})")
+                err.print(f"[green]+ {escape(f.name)}[/green] ({_human_size(f.size)})")
             except (CanvasError, httpx.HTTPError, OSError) as e:
                 entry.update(status="error", error=str(e))
-                err.print(f"[yellow]! {f.name}: {e}[/yellow]")
+                err.print(f"[yellow]! {escape(f.name)}: {escape(str(e))}[/yellow]")
             progress.remove_task(task)
             results.append(entry)
     return results
@@ -576,7 +577,7 @@ def download(
             recent = set(manifest.last_new)
             chosen = [s for s in chosen if s.file.id in recent or s.status == "updated"]
         chosen = _filter_states(chosen, match, since)
-        err.print(f"[dim]{crs.name} (course {crs.id}) → {target}[/dim]")
+        err.print(f"[dim]{escape(crs.name)} (course {crs.id}) → {escape(str(target))}[/dim]")
         results = _download_states(c, manifest, chosen, target, dry_run, force)
         if not dry_run:
             manifest.save()
@@ -586,7 +587,7 @@ def download(
     if dry_run:
         for r in results:
             if r["status"] == "would-download":
-                out.print(f"would download {r['name']} ({_human_size(r['size'])}) → {r['dest']}")
+                out.print(escape(f"would download {r['name']} ({_human_size(r['size'])}) → {r['dest']}"))
     out.print(_count(results) or "No files matched.")
 
 
@@ -603,14 +604,14 @@ def _sync_course(c: CanvasClient, cfg: CourseConfig, do_subtitles: bool, do_file
                 report["subtitles"] = _fetch_subtitles(v, items, cfg.subtitles_dir, cfg.formats, False)
         except REQUEST_ERRORS as e:
             report["subtitles_error"] = str(e)
-            err.print(f"[yellow]! {crs.name} subtitles: {e}[/yellow]")
+            err.print(f"[yellow]! {escape(crs.name)} subtitles: {escape(str(e))}[/yellow]")
     if do_files:
         # Reported separately so subtitles fetched above still show up when the file check fails.
         try:
             report.update(_sync_files(c, crs, cfg))
         except REQUEST_ERRORS as e:
             report["files_error"] = str(e)
-            err.print(f"[yellow]! {crs.name} files: {e}[/yellow]")
+            err.print(f"[yellow]! {escape(crs.name)} files: {escape(str(e))}[/yellow]")
     return report
 
 
@@ -638,7 +639,7 @@ def _sync_files(c: CanvasClient, crs: Course, cfg: CourseConfig) -> dict[str, An
 
 
 def _print_sync(r: dict[str, Any]) -> None:
-    out.rule(f"{r['name']}  [{r['course']}]")
+    out.rule(escape(f"{r['name']}  [{r['course']}]"))
     subs = r.get("subtitles")
     if subs is not None:
         got = [s for s in subs if s["status"] == "downloaded"]
@@ -649,11 +650,11 @@ def _print_sync(r: dict[str, Any]) -> None:
             line += "（" + "、".join(names[-4:]) + (f" 等 {len(names)} 节" if len(names) > 4 else "") + "）"
         if waiting:
             line += f"，暂无 {len(waiting)} 节"
-        out.print(line)
+        out.print(escape(line))
     elif r.get("subtitles_error"):
-        out.print(f"字幕：[yellow]{r['subtitles_error']}[/yellow]")
+        out.print(f"字幕：[yellow]{escape(r['subtitles_error'])}[/yellow]")
     if r.get("files_error"):
-        out.print(f"文件：[yellow]{r['files_error']}[/yellow]")
+        out.print(f"文件：[yellow]{escape(r['files_error'])}[/yellow]")
     if "new_files" not in r:
         return
     if r.get("found_locally"):
@@ -668,15 +669,15 @@ def _print_sync(r: dict[str, Any]) -> None:
     out.print(f"文件：新 {len(new)} 个" + (f"，有更新 {len(updated)} 个" if updated else ""))
     limit = 12
     for source, items in groups.items():
-        out.print(f"  [bold]{source}[/bold]  ({len(items)})")
+        out.print(f"  [bold]{escape(source)}[/bold]  ({len(items)})")
         for f in items[:limit]:
             lock = "  [未开放]" if f["locked"] else ""
-            out.print(f"    {f['id']:>9}  {f['name']}  [dim]{_human_size(f['size'])}[/dim]{lock}")
+            out.print(f"    {f['id']:>9}  {escape(f['name'])}  [dim]{_human_size(f['size'])}[/dim]{lock}")
         if len(items) > limit:
-            out.print(f"    [dim]… 另有 {len(items) - limit} 个，`canvaskit files {r['course']} --pending` 查看全部[/dim]")
+            out.print(f"    [dim]… 另有 {len(items) - limit} 个，`canvaskit files {escape(r['course'])} --pending` 查看全部[/dim]")
     for f in updated:
-        out.print(f"  [bold]有更新[/bold]  {f['id']:>9}  {f['name']}  [dim]Canvas 上 {f['updated_at'][:10]} 更新[/dim]")
-    out.print(f"  → 下载：canvaskit download {r['course']} --new   或   --id <id> ...")
+        out.print(f"  [bold]有更新[/bold]  {f['id']:>9}  {escape(f['name'])}  [dim]Canvas 上 {f['updated_at'][:10]} 更新[/dim]")
+    out.print(escape(f"  → 下载：canvaskit download {r['course']} --new   或   --id <id> ..."))
 
 
 @app.command()
@@ -689,13 +690,13 @@ def sync(
     """Download new subtitles and list new or updated course files (files are not downloaded)."""
     configured = _courses_config()
     if not configured:
-        err.print(f"[red]No courses configured. Add [courses.<name>] entries to {CONFIG_FILE}[/red]")
+        err.print(f"[red]No courses configured. Add {escape('[courses.<name>]')} entries to {escape(str(CONFIG_FILE))}[/red]")
         raise typer.Exit(2)
     targets: list[CourseConfig] = []
     for q in course or list(configured):
         cfg = find_course_config(q, configured)
         if cfg is None:
-            err.print(f"[red]'{q}' is not a configured course ({', '.join(configured)})[/red]")
+            err.print(f"[red]'{escape(q)}' is not a configured course ({escape(', '.join(configured))})[/red]")
             raise typer.Exit(2)
         targets.append(cfg)
     reports = []
@@ -704,15 +705,15 @@ def sync(
             try:
                 reports.append(_sync_course(c, cfg, not no_subtitles, not no_files))
             except REQUEST_ERRORS as e:
-                err.print(f"[yellow]! {cfg.key}: {e}[/yellow]")
+                err.print(f"[yellow]! {escape(cfg.key)}: {escape(str(e))}[/yellow]")
                 reports.append({"course": cfg.key, "course_id": cfg.canvas_id, "error": str(e)})
     if as_json:
         _emit_json(reports)
         return
     for r in reports:
         if "error" in r:
-            out.rule(f"{r['course']}")
-            out.print(f"[red]{r['error']}[/red]")
+            out.rule(escape(r['course']))
+            out.print(f"[red]{escape(r['error'])}[/red]")
         else:
             _print_sync(r)
 
@@ -736,7 +737,7 @@ def _skill_result(status: str, path: Path, as_json: bool) -> None:
     if as_json:
         _emit_json({"status": status, "path": str(path)})
     else:
-        out.print(f"{SKILL_STATUS[status]}：{path}")
+        out.print(escape(f"{SKILL_STATUS[status]}：{path}"))
 
 
 @skill_app.command("install")

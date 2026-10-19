@@ -178,3 +178,21 @@ def test_corrupt_manifest_is_a_config_error(fakes):
     assert result.exit_code == 2
     assert result.stdout == ""
     assert "corrupt" in result.stderr
+
+
+def test_messages_keep_square_brackets(fakes):
+    result = runner.invoke(cli.app, ["sync"])
+    assert result.exit_code == 2
+    assert "[courses.<name>]" in result.stderr
+
+
+def test_bracketed_names_are_not_rich_markup(fakes, monkeypatch):
+    cfg = CourseConfig(key="cpp", canvas_id=1, dir=fakes / "cpp")
+    monkeypatch.setattr(cli, "_courses_config", lambda: {"cpp": cfg})
+    monkeypatch.setattr(cli, "_client", lambda: FakeCanvas(files_error=True))
+    monkeypatch.setattr(FakeCanvas, "course_files", lambda self, cid: (_ for _ in ()).throw(
+        CanvasError("[/oops] [files] -> 500")))
+    result = runner.invoke(cli.app, ["sync"])
+    assert result.exit_code == 0, result.output
+    assert "[cpp]" in result.stdout
+    assert "[/oops] [files]" in result.stdout

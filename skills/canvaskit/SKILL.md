@@ -15,6 +15,22 @@ description: 获取上海交大 Canvas（oc.sjtu.edu.cn）的课程资料：课�
 - 退出码：`0` 成功；`1` 请求失败；`2` 没有 token、配置文件有误或参数错误。
 - 不知道参数时运行 `canvaskit <command> --help`。
 
+## 首次使用
+
+用户要求配置 canvaskit、第一次使用，或命令报 `Canvas token not found` / `No courses configured` 时，按顺序引导，完成一步再进行下一步：
+
+1. **Token**：`canvaskit whoami --json`。退出码 `2` 说明没有 token，按“出错时”里的方法让用户生成并保存，然后重跑 `whoami`，告诉用户识别到的姓名。
+2. **选课程**：`canvaskit courses --json`，把本学期的课（名称 + id）列给用户，问要关联哪几门。每门课给一个简称作为配置名（如 `高数`），可以先建议、让用户确认。
+3. **选文件夹**：问用户是用已有的课程文件夹，还是从头新建：
+   - **已有文件夹**：用户给出每门课的路径，确认路径存在。里面已有的课件在第一次 sync 时会按同名同大小认出来，不会重复下载。
+   - **从头新建**：问用户 Canvas 根目录放在哪（如 `~/Documents/Canvas`），每门课放在 `<根目录>/<Canvas 课程名>`。课程名里的 `/ \ :`（Windows 上还有 `< > " | ? *`）换成 `_`。创建这些文件夹。
+
+   两种可以混用：部分课用已有文件夹，其余新建在根目录下。字幕子目录名和格式用默认值，用户提到时才改。
+4. **写配置**：写入 `~/.config/canvaskit/config.toml`（格式见下）。文件已存在就追加，不要改动已有课程。路径写成 `~/...` 或正斜杠形式，Windows 上也一样。写完运行 `canvaskit courses --json`，确认每门课的 `config_key` 和 `dir` 都对。
+5. **第一次 sync**：`canvaskit sync --json`。字幕自动下载；课程文件只列出，按来源整理后问用户下载哪些（见“日常：`sync`”）。新建的文件夹里所有文件都算新文件，数量可能很多，可以建议先下 `单元：` 来源的课件。
+
+之后再添加课程时，如果已配置的课程都在同一个父目录下，默认建议放在那里的 `<Canvas 课程名>` 文件夹。
+
 ## 课程配置
 
 `~/.config/canvaskit/config.toml` 把课程名对应到 Canvas 课程和本地文件夹。`canvaskit courses --json` 的 `config_key` / `dir` 字段显示哪些课已配置。
@@ -125,7 +141,7 @@ canvaskit snapshots 高数 --latest 1 --images --json  # 同时下载 JPEG，需
 - `Canvas token not found`：让用户在 Canvas → 账户 → 设置 → “新建访问许可证”生成 token，写入 `~/.config/canvaskit/env`（`export CANVAS_TOKEN=...`，权限 600；Windows 上写 `CANVAS_TOKEN=...`，README 里有 PowerShell 命令）。不要让用户把 token 贴到对话里。
 - `whoami` 报 `-> 401`：token 失效或被撤销，让用户重新生成。
 - `state/<id>.json is corrupt`：文件清单损坏，删掉该文件后重新 `sync` 即可（本地已有的文件会按同名同大小重新认出来）。
-- `No courses configured` / `is not a configured course`：在 `config.toml` 里添加课程（见上）。
+- `No courses configured` / `is not a configured course`：按“首次使用”第 2–4 步关联课程。
 - `config.toml: Invalid initial character for a key part`：中文课程名没加引号。
 - `No course matches` / `matches several courses`：先 `canvaskit courses --all --json` 找到课程 id。
 - `当前课程暂未安排直录播` / `no lecture-recording tool` / `did not return a teaching class`：这门课没有录播，只能用 `files` / `download`。
