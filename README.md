@@ -12,6 +12,8 @@ CanvasKit 是面向 Agent（如 Claude Code）的上海交通大学 Canvas（`oc
 
 仅需 Canvas 访问令牌（Token），无需 jAccount 登录。
 
+https://github.com/user-attachments/assets/bbfc3f86-1d41-4eaf-b4b8-795b29e23b0c
+
 ## 快速开始
 
 ### 1. 安装
