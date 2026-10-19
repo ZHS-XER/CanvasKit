@@ -1,4 +1,9 @@
-# CanvasKit
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.png">
+    <img src="assets/logo.png" alt="CanvasKit" width="560">
+  </picture>
+</h1>
 
 [![CI](https://github.com/ZHS-XER/CanvasKit/actions/workflows/ci.yml/badge.svg)](https://github.com/ZHS-XER/CanvasKit/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
